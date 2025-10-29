@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# venv / tools
+.venv/
+.env
+.ruff_cache/
+
+# data & weights
+data/uploads/
+data/reports/
+core/softprompt/weights/*.json
+
+# misc
+.DS_Store
