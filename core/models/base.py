@@ -1,43 +1,23 @@
+# model/base.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any, Protocol
+from typing import Protocol, Optional, List, Dict, Any
 
 
 @dataclass
-class GenerationConfig:
-    max_tokens: int = 512
+class GenConfig:
+    max_new_tokens: int = 256
     temperature: float = 0.7
     top_p: float = 0.95
-    num_candidates: int = 1
-    seed: Optional[int] = None
+    do_sample: bool = True
 
 
 @dataclass
-class GenerationResult:
+class GenResult:
     text: str
     meta: Dict[str, Any]
 
-class TextModel(Protocol):
-    """
-    Abstract model interface.
-    """
-    def generate(self, prompt: str, cfg: Optional[GenerationConfig] = None) -> GenerationResult:
-        pass
 
-    def generate_n(self, prompt: str, cfg: Optional[GenerationConfig] = None) -> List[GenerationResult]:
-        """
-        Convenience: produce multiple candidates.
-        """
-        if cfg is None:
-            cfg = GenerationConfig()
-        results = []
-        for i in range(max(1, cfg.num_candidates)):
-            local_cfg = GenerationConfig(
-                max_tokens=cfg.max_tokens,
-                temperature=cfg.temperature,
-                top_p=cfg.top_p,
-                num_candidates=1,
-                seed=None if cfg.seed is None else (cfg.seed + i)
-            )
-            results.append(self.generate(prompt, cfg=local_cfg))
-        return results
+class TextModel(Protocol):
+    def generate(self, prompt: str, cfg: Optional[GenConfig] = None) -> GenResult: ...
+    def generate_n(self, prompt: str, n: int, cfg: Optional[GenConfig] = None) -> List[GenResult]: ...

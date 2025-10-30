@@ -3,3 +3,10 @@ pandas>=2.1.0
 matplotlib>=3.8.0
 streamlit>=1.36.0
 gTTS>=2.5.1
+torch>=2.2
+transformers>=4.42
+peft>=0.10
+accelerate
+scikit-learn
+matplotlib
+seaborn

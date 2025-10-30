@@ -18,7 +18,7 @@ from core.pipeline.eval.report import (
     plot_semantic_similarity_hist,
     render_run_summary_md,
 )
-from core.tts.gtts_impl import synthesize_tts_mp3  # optional, safe fallback
+from core.tts.gtts_impl import synthesize_tts_mp3
 
 
 # ---------- paths ----------

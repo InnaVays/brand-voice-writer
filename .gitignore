@@ -1,17 +1,13 @@
-# Python
 __pycache__/
 *.pyc
-*.pyo
-
-# venv / tools
 .venv/
 .env
-.ruff_cache/
 
-# data & weights
-data/uploads/
-data/reports/
-core/softprompt/weights/*.json
+# artifacts
+adapters/
+figures/
+reports/
 
-# misc
-.DS_Store
+# data
+data/**
+!data/.gitkeep
