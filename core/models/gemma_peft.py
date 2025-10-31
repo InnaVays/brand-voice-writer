@@ -1,103 +1,102 @@
-# model/gemma_peft.py
 from __future__ import annotations
-import os
-from typing import Optional, List
+import os, json, math, time
+from dataclasses import dataclass, asdict
+from typing import Dict, Any
 
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
-from peft import (
-    get_peft_model,
-    PromptTuningConfig,
-    PeftModel,
-    PeftConfig,
-)
+from datasets import load_dataset
+from transformers import Trainer, TrainingArguments, DataCollatorForLanguageModeling
+from transformers import AutoTokenizer
+from peft import PromptTuningConfig, get_peft_model, TaskType, PeftModel
 
-from model.base import TextModel, GenConfig, GenResult
+@dataclass
+class TrainConfig:
+    virtual_tokens: int = 40
+    lr: float = 5e-3
+    epochs: int = 3
+    batch_size: int = 8
+    max_seq_len: int = 512
+    style_id: str = "default"
 
-
-DEFAULT_MODEL_ID = "google/gemma-2b-it"
-
-
-def load_gemma_base(model_id: str = DEFAULT_MODEL_ID, device: Optional[str] = None):
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-    tok = AutoTokenizer.from_pretrained(model_id, use_fast=True)
-    mdl = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        device_map="auto" if device == "cuda" else None,
-    )
-    mdl.to(device)
-    return tok, mdl, device
-
-
-def attach_prompt_tuning(
-    model,
-    num_virtual_tokens: int = 40,
-    init_text: str = "Our brand voice is warm, confident, concise.",
-):
-    cfg = PromptTuningConfig(
-        task_type="CAUSAL_LM",
-        num_virtual_tokens=num_virtual_tokens,
-        prompt_tuning_init="TEXT",
-        prompt_tuning_init_text=init_text,
-    )
-    peft_model = get_peft_model(model, cfg)
-    peft_model.print_trainable_parameters()
-    return peft_model
-
-
-def save_prompt_tuning(peft_model: PeftModel, out_dir: str):
-    os.makedirs(out_dir, exist_ok=True)
-    peft_model.save_pretrained(out_dir)
-
-
-def load_prompt_tuning(base_model, adapter_dir: str) -> PeftModel:
-    return PeftModel.from_pretrained(base_model, adapter_dir)
-
-
-class GemmaPeftGenerator(TextModel):
-    def __init__(
-        self,
-        tokenizer,
-        model,
-        device: str,
-        system_preamble: str = "You rewrite texts in the user's own brand voice. Keep facts. Improve clarity.",
-    ):
+class SoftPromptTrainer:
+    def __init__(self, model, tokenizer, cfg: TrainConfig, device: str):
+        self.model = model
         self.tok = tokenizer
-        self.mdl = model
+        self.cfg = cfg
         self.device = device
-        self.system_preamble = system_preamble
 
-    def _to_gen_cfg(self, cfg: Optional[GenConfig]) -> GenerationConfig:
-        if cfg is None:
-            cfg = GenConfig()
-        return GenerationConfig(
-            max_new_tokens=cfg.max_new_tokens,
-            temperature=cfg.temperature,
-            top_p=cfg.top_p,
-            do_sample=cfg.do_sample,
-            eos_token_id=self.tok.eos_token_id,
-            pad_token_id=self.tok.eos_token_id,
+    def _wrap_peft(self):
+        init_text = "Our brand voice is warm, precise, and trustworthy."
+        pt_cfg = PromptTuningConfig(
+            task_type=TaskType.CAUSAL_LM,
+            num_virtual_tokens=self.cfg.virtual_tokens,
+            prompt_tuning_init="TEXT",
+            prompt_tuning_init_text=init_text,
+            tokenizer_name_or_path=self.tok.name_or_path,
+        )
+        peft_model = get_peft_model(self.model, pt_cfg)
+        peft_model.print_trainable_parameters()
+        return peft_model
+
+    def _prep_dataset(self, jsonl_path: str):
+        ds = load_dataset("json", data_files=jsonl_path, split="train")
+        instr_tmpl = "Instruction: {instruction}\n\nInput:\n{input}\n\nOutput:\n"
+        def tok_map(ex):
+            prompt = instr_tmpl.format(**ex)
+            ids = self.tok(
+                prompt + ex["output"],
+                max_length=self.cfg.max_seq_len,
+                truncation=True,
+                return_tensors=None,
+            )
+            return {"input_ids": ids["input_ids"], "attention_mask": ids["attention_mask"]}
+        return ds.map(tok_map, remove_columns=ds.column_names, num_proc=1)
+
+    def train(self, dataset_jsonl: str, out_base_dir: str) -> Dict[str, Any]:
+        style_dir = os.path.join(out_base_dir, self.cfg.style_id)
+        os.makedirs(style_dir, exist_ok=True)
+
+        peft_model = self._wrap_peft()
+        peft_model.train()
+
+        ds = self._prep_dataset(dataset_jsonl)
+        collator = DataCollatorForLanguageModeling(self.tok, mlm=False)
+
+        args = TrainingArguments(
+            output_dir=style_dir,
+            per_device_train_batch_size=self.cfg.batch_size,
+            num_train_epochs=self.cfg.epochs,
+            learning_rate=self.cfg.lr,
+            logging_steps=10,
+            save_steps=200,
+            save_total_limit=1,
+            bf16=(self.device == "cuda"),
+            fp16=(self.device == "cuda"),
+            report_to=[],
         )
 
-    def generate(self, prompt: str, cfg: Optional[GenConfig] = None) -> GenResult:
-        gcfg = self._to_gen_cfg(cfg)
-        full = f"{self.system_preamble}\n\n{prompt}"
-        inputs = self.tok(full, return_tensors="pt").to(self.mdl.device)
-        with torch.no_grad():
-            out_ids = self.mdl.generate(**inputs, generation_config=gcfg)
-        text = self.tok.decode(out_ids[0], skip_special_tokens=True)
-        # strip preamble
-        if text.startswith(self.system_preamble):
-            text = text[len(self.system_preamble):].lstrip()
-        return GenResult(text=text, meta={"tokens": int(out_ids.numel())})
+        trainer = Trainer(
+            model=peft_model,
+            args=args,
+            data_collator=collator,
+            train_dataset=ds,
+        )
 
-    def generate_n(self, prompt: str, n: int, cfg: Optional[GenConfig] = None) -> List[GenResult]:
-        return [self.generate(prompt, cfg) for _ in range(max(1, n))]
+        t0 = time.time()
+        trainer.train()
+        secs = time.time() - t0
 
+        # Save PEFT adapter (soft prompt)
+        peft_model.save_pretrained(style_dir)
+        with open(os.path.join(style_dir, "run_meta.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "style_id": self.cfg.style_id,
+                "seconds": secs,
+                "virtual_tokens": self.cfg.virtual_tokens,
+                "epochs": self.cfg.epochs,
+                "batch_size": self.cfg.batch_size,
+                "lr": self.cfg.lr,
+                "max_seq_len": self.cfg.max_seq_len
+            }, f, ensure_ascii=False, indent=2)
 
-def extract_softprompt_matrix(peft_model: PeftModel):
-    # PEFT prompt encoder weights
-    enc = peft_model.base_model.prompt_encoder
-    w = enc.weight.detach().float().cpu().numpy()  # (num_virtual_tokens, hidden_dim)
-    return w
+        return {"style_dir": style_dir, "seconds": secs}
