@@ -3,8 +3,8 @@ import argparse, os, json
 from pathlib import Path
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from core.model.gemma_loader import load_gemma
-from core.model.peft_trainer import SoftPromptTrainer, TrainConfig
+from core.models.gemma_loader import load_gemma
+from core.models.gemma_peft import SoftPromptTrainer, TrainConfig
 from core.eval.metrics import RunMetrics, save_run_json
 
 def main():
