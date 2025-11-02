@@ -2,7 +2,7 @@
 models:
   summarizer:                # llama.cpp GGUF used only for gists
     name: "llama-3-1b-instruct-q4_0.gguf"
-    url:  "https://example.com/gguf/llama-3-1b-instruct-q4_0.gguf"   # put real URL you trust
+    url:  "https://huggingface.co/TheBloke/Llama-3-1B-Instruct-GGUF"   # put real URL you trust
     sha256: ""               # optional: set if you want checksum verification
     n_ctx: 2048
     n_threads: 6

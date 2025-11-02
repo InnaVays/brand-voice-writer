@@ -1,51 +1,49 @@
 from __future__ import annotations
-import argparse, os, json
+import argparse, os
 from pathlib import Path
+import yaml
 
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from core.models.gemma_loader import load_gemma
-from core.models.gemma_peft import SoftPromptTrainer, TrainConfig
-from core.eval.metrics import RunMetrics, save_run_json
+from core.softprompt.gemma_loader import load_gemma
+from core.softprompt.gemma_peft import SoftPromptTrainer, TrainConfig
+from core.models.registry import Registry
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default="data/datasets/train.jsonl")
-    ap.add_argument("--out", default="artifacts/softprompt")
-    ap.add_argument("--style", required=True, help="Style ID / name (e.g., my_brand)")
-    ap.add_argument("--model", default="google/gemma-2b-it")
-    ap.add_argument("--virtual-tokens", type=int, default=40)
-    ap.add_argument("--epochs", type=int, default=3)
-    ap.add_argument("--bsz", type=int, default=8)
-    ap.add_argument("--lr", type=float, default=5e-3)
-    ap.add_argument("--max-seq-len", type=int, default=512)
-    ap.add_argument("--device", default="auto")
+    ap.add_argument("--config", default="config/app.yaml")
+    ap.add_argument("--style", required=True, help="style_id (folder under raw/ or dataset name)")
+    ap.add_argument("--virtual-tokens", type=int, default=None)
+    ap.add_argument("--epochs", type=int, default=None)
+    ap.add_argument("--bsz", type=int, default=None)
+    ap.add_argument("--lr", type=float, default=None)
+    ap.add_argument("--max-seq-len", type=int, default=None)
     args = ap.parse_args()
 
-    tok, model, device = load_gemma(args.model, device=args.device)
-    cfg = TrainConfig(
-        virtual_tokens=args.virtual_tokens,
-        lr=args.lr,
-        epochs=args.epochs,
-        batch_size=args.bsz,
-        max_seq_len=args.max_seq_len,
-        style_id=args.style
-    )
-    trainer = SoftPromptTrainer(model, tok, cfg, device)
-    res = trainer.train(args.data, args.out)
+    cfg = yaml.safe_load(open(args.config, "r", encoding="utf-8"))
+    registry = Registry(cfg["paths"]["registry"])
 
-    # simple run log
-    metrics = RunMetrics(
-        seconds=res["seconds"],
-        n_examples=sum(1 for _ in open(args.data, "r", encoding="utf-8")),
-        virtual_tokens=args.virtual_tokens,
-        epochs=args.epochs,
-        batch_size=args.bsz,
-        lr=args.lr
+    style = registry.get_style(args.style)
+    if not style or "dataset" not in style:
+        raise SystemExit(f"Dataset for style '{args.style}' not found. Run prepare_corpus first.")
+
+    model_id = cfg["models"]["rewriter_base"]["hf_id"]
+    device   = cfg["models"]["rewriter_base"].get("device", "auto")
+    tok, model, dev = load_gemma(model_id, device=device)
+
+    tc = TrainConfig(
+        virtual_tokens = args.virtual_tokens or 40,
+        lr             = args.lr or 5e-3,
+        epochs         = args.epochs or 3,
+        batch_size     = args.bsz or 8,
+        max_seq_len    = args.max_seq_len or 512,
+        style_id       = args.style,
     )
-    run_dir = os.path.join(args.out, args.style)
-    run_path = save_run_json(metrics.to_dict(), run_dir)
-    print(f"Saved PEFT soft prompt: {res['style_dir']}")
-    print(f"Saved run log: {run_path}")
+
+    out_root = cfg["paths"]["softprompt_root"]
+    trainer  = SoftPromptTrainer(model, tok, tc, dev)
+    res      = trainer.train(style["dataset"], out_root)
+
+    registry.upsert_style(args.style, peft_dir=res["style_dir"])
+    print(f"[{args.style}] trained → {res['style_dir']}")
 
 if __name__ == "__main__":
     main()
