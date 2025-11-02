@@ -1,3 +1,6 @@
+from scripts._bootstrap import add_repo_root
+add_repo_root()
+
 from __future__ import annotations
 import argparse, yaml
 from core.models.registry import StyleRegistry

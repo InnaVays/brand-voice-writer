@@ -1,3 +1,6 @@
+from scripts._bootstrap import add_repo_root
+add_repo_root()
+
 from __future__ import annotations
 import argparse, os
 from core.softprompt.gemma_loader import load_gemma

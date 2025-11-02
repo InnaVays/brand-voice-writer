@@ -1,3 +1,6 @@
+from scripts._bootstrap import add_repo_root
+add_repo_root()
+
 from __future__ import annotations
 import argparse, os
 from core.eval.report import visualize_softprompt_matrix, normalized_attention_difference
