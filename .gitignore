@@ -11,3 +11,5 @@ reports/
 # data
 data/**
 !data/.gitkeep
+
+.hf_cache/

@@ -1,7 +1,8 @@
-from scripts._bootstrap import add_repo_root
+from __future__ import annotations
+
+from _bootstrap import add_repo_root
 add_repo_root()
 
-from __future__ import annotations
 import argparse, os
 from pathlib import Path
 from tqdm import tqdm
@@ -10,7 +11,7 @@ import yaml
 from core.io.loaders import DocLoader
 from core.io.cleaners import Cleaner
 from core.corpus.chunker import Chunker
-from core.corpus.summarizer import LlamaSmallSummarizer
+from core.corpus.summarizer import SmallSummarizer
 from core.corpus.dataset import DatasetBuilder
 from core.models.registry import StyleRegistry
 
@@ -56,7 +57,7 @@ def main():
 
     # summarizer model (download on first run, reuse later)
     s_cfg  = cfg["summarizer"]
-    summarizer = LlamaSmallSummarizer(
+    summarizer = SmallSummarizer(
         model_id=s_cfg["model_id"],
         cache_dir=s_cfg.get("cache_dir", ".hf_cache"),
         device=cfg.get("device", "auto"),

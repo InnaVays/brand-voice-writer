@@ -1,0 +1,7 @@
+{
+  "styles": {
+    "fintech": {
+      "dataset": "data/datasets/fintech.jsonl"
+    }
+  }
+}

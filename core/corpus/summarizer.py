@@ -5,14 +5,14 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 PROMPT = (
-"Summarize the following text in 2 neutral, factual sentences. "
+"Summarize the following text in a few neutral, factual sentences. "
 "Avoid marketing language, emojis, and hype.\n\n"
 "Text:\n{chunk}\n\nSummary:"
 )
 
-class LlamaSmallSummarizer:
+class SmallSummarizer:
     """
-    1B Instruct model for neutral 1–2 sentence gists.
+    1B Instruct model for neutral 1-2 sentence gists.
     Downloads on first use into summarizer.cache_dir. Reuses later.
     """
     def __init__(self, model_id: str, cache_dir: str = ".hf_cache", device: str = "auto", max_new_tokens: int = 96, temperature: float = 0.0):
@@ -43,20 +43,48 @@ class LlamaSmallSummarizer:
 
     def summarize(self, chunk: str, max_sentences: int = 2) -> str:
         self._lazy_load()
-        prompt = PROMPT.format(chunk=chunk.strip()[:4000])
+        text = chunk.strip()[:]
+
+        # 1) Chat-format (предпочтительно для Qwen / TinyLlama / Llama)
+        try:
+            messages = [
+                {"role": "system", "content": "You write neutral, factual 1-2 sentence summaries."},
+                {"role": "user", "content": f"Summarize the following text in 2 neutral, factual sentences without hype or emojis:\n\n{text}"}
+            ]
+            prompt = self._tok.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+        except Exception:
+            # fallback: обычный prompt
+            prompt = (
+                "Summarize the following text in 2 neutral, factual sentences. "
+                "Avoid marketing language, emojis, and hype.\n\n"
+                f"Text:\n{text}\n\nSummary:"
+            )
+
         inputs = self._tok(prompt, return_tensors="pt").to(self.device)
+
         with torch.no_grad():
             out = self._model.generate(
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
                 temperature=self.temperature,
                 do_sample=False,
-                eos_token_id=self._tok.eos_token_id
+                eos_token_id=getattr(self._tok, "eos_token_id", None),
+                pad_token_id=getattr(self._tok, "pad_token_id", getattr(self._tok, "eos_token_id", None)),
+                return_dict_in_generate=True,
             )
-        text = self._tok.decode(out[0], skip_special_tokens=True)
-        s = text.split("Summary:")[-1].strip()
-        # trim to requested sentences (simple split)
-        parts = [p.strip() for p in s.replace("\n", " ").split(". ") if p.strip()]
-        s2 = ". ".join(parts[:max_sentences]).strip()
-        if s2 and s2[-1] not in ".!?…": s2 += "."
-        return s2
+
+        seq = out.sequences[0]
+        in_len = inputs["input_ids"].shape[1]
+        new_tokens = seq[in_len:]
+        s = self._tok.decode(new_tokens, skip_special_tokens=True).strip()
+
+        for lead in ("Assistant:", "assistant:", "Summary:", "summary:"):
+            if s.startswith(lead):
+                s = s[len(lead):].lstrip()
+
+        s = s.replace("\n", " ")
+
+        return s
+
