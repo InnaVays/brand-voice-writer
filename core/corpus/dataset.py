@@ -14,7 +14,7 @@ class DatasetBuilder:
             for chunk, gist in chunks_with_gist:
                 rec = {
                     "instruction": "Rewrite the input in the user's voice while preserving meaning.",
-                    "input": f"{chunk}\n\nGIST: {gist}",
+                    "input": f"{gist}",
                     "output": chunk
                 }
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")

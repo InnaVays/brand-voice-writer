@@ -22,8 +22,18 @@ class SmallSummarizer:
         self.device = self._resolve_device(device)
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
-        self._tok: Optional[AutoTokenizer] = None
-        self._model: Optional[AutoModelForCausalLM] = None
+
+        self._tok = AutoTokenizer.from_pretrained(
+            self.model_id, cache_dir=self.cache_dir, use_fast=True, trust_remote_code=True
+        )
+        self._model = AutoModelForCausalLM.from_pretrained(
+            self.model_id,
+            cache_dir=self.cache_dir,
+            trust_remote_code=True,
+            low_cpu_mem_usage=True,
+            torch_dtype=(torch.float16 if self.device in ("cuda","mps") else torch.float32),
+        ).to(self.device)
+        self._model.eval()
 
     def _resolve_device(self, device: str) -> str:
         if device == "auto":
@@ -48,8 +58,8 @@ class SmallSummarizer:
         # 1) Chat-format (предпочтительно для Qwen / TinyLlama / Llama)
         try:
             messages = [
-                {"role": "system", "content": "You write neutral, factual 1-2 sentence summaries."},
-                {"role": "user", "content": f"Summarize the following text in 2 neutral, factual sentences without hype or emojis:\n\n{text}"}
+                {"role": "system", "content": "You write neutral, a few factual sentence summaries."},
+                {"role": "user", "content": f"Summarize the following text in a few neutral, factual sentences without hype or emojis:\n\n{text}"}
             ]
             prompt = self._tok.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
@@ -57,7 +67,7 @@ class SmallSummarizer:
         except Exception:
             # fallback: обычный prompt
             prompt = (
-                "Summarize the following text in 2 neutral, factual sentences. "
+                "Summarize the following text in a few neutral, factual sentences. "
                 "Avoid marketing language, emojis, and hype.\n\n"
                 f"Text:\n{text}\n\nSummary:"
             )
