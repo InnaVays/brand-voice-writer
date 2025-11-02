@@ -1,60 +1,62 @@
-#from __future__ import annotations
-from typing import Optional, Dict, Any
-from llama_cpp import Llama
-import re
-from core.models.downloader import ensure_download
-from core.models.registry import Registry
+from __future__ import annotations
+from typing import Optional
+import os
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
-_PROMPT = """You are a concise neutral summarizer.
-Summarize the text in exactly 1-2 plain sentences. Be factual and avoid hype or emojis.
+PROMPT = (
+"Summarize the following text in 2 neutral, factual sentences. "
+"Avoid marketing language, emojis, and hype.\n\n"
+"Text:\n{chunk}\n\nSummary:"
+)
 
-[TEXT]
-{chunk}
-[/TEXT]
-
-Summary:
-"""
-
-_WS = re.compile(r"\s+")
-def _clean(s: str) -> str:
-    s = s.strip()
-    s = _WS.sub(" ", s)
-    if s and s[-1] not in ".!?…": s += "."
-    return s
-
-class GistBuilder:
+class LlamaSmallSummarizer:
     """
-    llama.cpp-only summarizer with auto-download and registry bookkeeping.
+    1B Instruct model for neutral 1–2 sentence gists.
+    Downloads on first use into summarizer.cache_dir. Reuses later.
     """
-    def __init__(self, cfg: Dict[str, Any], registry: Registry):
-        mcfg = cfg["models"]["summarizer"]
-        cache = cfg["paths"]["models_cache"]
-        local_path = ensure_download(mcfg["url"], cache, mcfg["name"], mcfg.get("sha256") or None)
-        # record in registry
-        registry.set_model("summarizer", {"path": local_path, "name": mcfg["name"]})
-        self.stop = ("[/TEXT]", "###", "</s>", "Summary:", "[END]")
-        self.llm = Llama(
-            model_path=local_path,
-            n_ctx=mcfg.get("n_ctx", 2048),
-            n_threads=mcfg.get("n_threads", 6),
-            n_gpu_layers=mcfg.get("n_gpu_layers", 0),
-            verbose=False,
-        )
-        self.max_new = int(mcfg.get("max_new", 96))
-        self.temperature = float(mcfg.get("temperature", 0.0))
-        self.top_p = float(mcfg.get("top_p", 0.9))
+    def __init__(self, model_id: str, cache_dir: str = ".hf_cache", device: str = "auto", max_new_tokens: int = 96, temperature: float = 0.0):
+        self.model_id = model_id
+        self.cache_dir = cache_dir
+        os.makedirs(cache_dir, exist_ok=True)
+        self.device = self._resolve_device(device)
+        self.max_new_tokens = max_new_tokens
+        self.temperature = temperature
+        self._tok: Optional[AutoTokenizer] = None
+        self._model: Optional[AutoModelForCausalLM] = None
 
-    def gist(self, chunk: str, max_chars: int = 4000) -> str:
-        prompt = _PROMPT.format(chunk=(chunk or "")[:max_chars])
-        out = self.llm(
-            prompt,
-            max_tokens=self.max_new,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            stop=self.stop,
-        )
-        text = out["choices"][0]["text"].strip()
-        if text.lower().startswith("summary:"):
-            text = text[len("summary:"):].strip()
-        text = text.split("\n")[0].strip()
-        return _clean(text)
+    def _resolve_device(self, device: str) -> str:
+        if device == "auto":
+            if torch.cuda.is_available(): return "cuda"
+            try:
+                if torch.backends.mps.is_available(): return "mps"
+            except Exception:
+                pass
+            return "cpu"
+        return device
+
+    def _lazy_load(self):
+        if self._tok is None or self._model is None:
+            self._tok = AutoTokenizer.from_pretrained(self.model_id, cache_dir=self.cache_dir, use_fast=True)
+            self._model = AutoModelForCausalLM.from_pretrained(self.model_id, cache_dir=self.cache_dir).to(self.device)
+            self._model.eval()
+
+    def summarize(self, chunk: str, max_sentences: int = 2) -> str:
+        self._lazy_load()
+        prompt = PROMPT.format(chunk=chunk.strip()[:4000])
+        inputs = self._tok(prompt, return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            out = self._model.generate(
+                **inputs,
+                max_new_tokens=self.max_new_tokens,
+                temperature=self.temperature,
+                do_sample=False,
+                eos_token_id=self._tok.eos_token_id
+            )
+        text = self._tok.decode(out[0], skip_special_tokens=True)
+        s = text.split("Summary:")[-1].strip()
+        # trim to requested sentences (simple split)
+        parts = [p.strip() for p in s.replace("\n", " ").split(". ") if p.strip()]
+        s2 = ". ".join(parts[:max_sentences]).strip()
+        if s2 and s2[-1] not in ".!?…": s2 += "."
+        return s2

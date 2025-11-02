@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse, os, json
+import argparse, os
 from pathlib import Path
 from tqdm import tqdm
 import yaml
@@ -7,74 +7,91 @@ import yaml
 from core.io.loaders import DocLoader
 from core.io.cleaners import Cleaner
 from core.corpus.chunker import Chunker
-from core.corpus.summarizer import GistBuilder
+from core.corpus.summarizer import LlamaSmallSummarizer
 from core.corpus.dataset import DatasetBuilder
-from core.models.registry import Registry
+from core.models.registry import StyleRegistry
 
-def _find_styles(raw_dir: Path) -> dict[str, list[Path]]:
-    styles: dict[str, list[Path]] = {}
-    # style subdirs
-    for p in raw_dir.iterdir():
-        if p.is_dir():
-            files = [f for f in p.rglob("*") if f.is_file()]
-            if files:
-                styles[p.name] = files
-    # files directly in raw → default
-    root_files = [f for f in raw_dir.iterdir() if f.is_file()]
-    if root_files:
-        styles.setdefault("default", []).extend(root_files)
-    return styles
+def build_for_style(style_id: str, src_dir: Path, out_dir: Path, target_chunks: int, words_per_chunk: int, summarizer) -> str:
+    loader = DocLoader()
+    cleaner = Cleaner()
+    chunker = Chunker()
+    ds = DatasetBuilder()
+
+    docs = loader.load_dir(str(src_dir))
+    if not docs:
+        return ""
+
+    chunks_all = []
+    for d in docs:
+        txt = cleaner.normalize(d["text"])
+        chunks = chunker.make_chunks(txt, target_words=words_per_chunk)
+        chunks_all.extend(chunks)
+
+    chunks_all = chunker.sample_target(chunks_all, target_n=target_chunks)
+
+    pairs = []
+    for c in tqdm(chunks_all, desc=f"Gisting[{style_id}]"):
+        gist = summarizer.summarize(c)
+        pairs.append((c, gist))
+
+    out_path = out_dir / f"{style_id}.jsonl"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ds.build_jsonl(pairs, str(out_path))
+    return str(out_path)
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="config/app.yaml")
+    ap.add_argument("--raw", default=None, help="Override raw path")
+    ap.add_argument("--out", default=None, help="Override datasets dir")
+    ap.add_argument("--style", default=None, help="Single style id (optional). If omitted, uses subfolders of raw/")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config, "r", encoding="utf-8"))
-    raw_dir = Path(cfg["paths"]["raw"])
-    datasets_dir = Path(cfg["paths"]["datasets"]); datasets_dir.mkdir(parents=True, exist_ok=True)
-    registry = Registry(cfg["paths"]["registry"])
+    raw_root = Path(args.raw or cfg["paths"]["raw"])
+    out_dir = Path(args.out or cfg["paths"]["datasets"])
 
-    loader = DocLoader()
-    cleaner = Cleaner()
-    chunker = Chunker()
-    gist = GistBuilder(cfg, registry)
-    ds = DatasetBuilder()
+    # summarizer model (download on first run, reuse later)
+    s_cfg  = cfg["summarizer"]
+    summarizer = LlamaSmallSummarizer(
+        model_id=s_cfg["model_id"],
+        cache_dir=s_cfg.get("cache_dir", ".hf_cache"),
+        device=cfg.get("device", "auto"),
+        max_new_tokens=s_cfg.get("max_new_tokens", 96),
+        temperature=s_cfg.get("temperature", 0.0),
+    )
 
-    styles = _find_styles(raw_dir)
-    if not styles:
-        raise SystemExit(f"No documents found in {raw_dir}. Create subfolders per style_id or place files in raw/.")
+    os.makedirs(out_dir, exist_ok=True)
+    reg = StyleRegistry(cfg["paths"]["registry"])
 
-    target_chunks = int(cfg["ingest"]["target_chunks"])
-    words_per_chunk = int(cfg["ingest"]["words_per_chunk"])
+    styles = []
+    if args.style:
+        styles = [args.style]
+    else:
+        # style folders are data/raw/<style_id>/*
+        styles = sorted([p.name for p in raw_root.iterdir() if p.is_dir()])
 
-    for style_id, files in styles.items():
-        # Load & chunk
-        docs = []
-        for f in files:
-            docs.extend(loader.load_dir(f.parent if f.is_dir() else f.parent))
-            break  # loader.load_dir reads whole dir; avoid duplicating per file
-        if not docs:
-            print(f"[{style_id}] no docs; skipping")
-            continue
+        # fallback: if raw contains files directly → single 'default' style
+        if not styles:
+            styles = ["default"]
 
-        chunks_all = []
-        for d in docs:
-            txt = cleaner.normalize(d["text"])
-            chunks = chunker.make_chunks(txt, target_words=words_per_chunk)
-            chunks_all.extend(chunks)
+    for sid in styles:
+        src = raw_root if sid == "default" else raw_root / sid
+        dataset_path = build_for_style(
+            style_id=sid,
+            src_dir=src,
+            out_dir=out_dir,
+            target_chunks=cfg["ingest"]["target_chunks"],
+            words_per_chunk=cfg["ingest"]["words_per_chunk"],
+            summarizer=summarizer,
+        )
+        if dataset_path:
+            reg.upsert_style(style_id=sid, dataset_path=dataset_path)
+            print(f"[OK] {sid} → {dataset_path}")
+        else:
+            print(f"[SKIP] {sid}: no documents found")
 
-        chunks_all = chunker.sample_target(chunks_all, target_n=target_chunks)
-
-        pairs = []
-        for c in tqdm(chunks_all, desc=f"[{style_id}] Gisting"):
-            pairs.append((c, gist.gist(c)))
-
-        out_path = datasets_dir / f"{style_id}.jsonl"
-        ds.build_jsonl(pairs, str(out_path))
-        registry.upsert_style(style_id, dataset_path=str(out_path), meta={"n_examples": len(pairs)})
-
-        print(f"[{style_id}] dataset -> {out_path} ({len(pairs)} examples)")
+    print("Registered styles:", reg.list_styles())
 
 if __name__ == "__main__":
     main()

@@ -1,30 +1,28 @@
-# === Models ===
-models:
-  summarizer:                # llama.cpp GGUF used only for gists
-    name: "llama-3-1b-instruct-q4_0.gguf"
-    url:  "https://huggingface.co/TheBloke/Llama-3-1B-Instruct-GGUF"   # put real URL you trust
-    sha256: ""               # optional: set if you want checksum verification
-    n_ctx: 2048
-    n_threads: 6
-    n_gpu_layers: 0
-    temperature: 0.0
-    top_p: 0.9
-  rewriter_base:             # Gemma for prompt-tuning (PEFT)
-    hf_id: "google/gemma-2b-it"
-    device: "auto"           # cuda | mps | cpu | auto
+model_id: "google/gemma-2b-it"   # for soft-prompt training
+device: "auto"
 
-# === Paths ===
-paths:
-  models_cache: "models"                   # downloaded GGUF goes here
-  raw: "data/raw"                          # structure: raw/<style_id>/*.{pdf,docx,txt,md} OR raw/* files -> style "default"
-  interim: "data/interim"
-  datasets: "data/datasets"                # per-style jsonl: datasets/<style_id>.jsonl
-  softprompt_root: "artifacts/softprompt"  # per-style dir: artifacts/softprompt/<style_id>/
-  reports: "artifacts/reports"
-  registry: "artifacts/registry.json"      # models+styles registry
+summarizer:
+  model_id: "meta-llama/Llama-3.2-1B-Instruct"
+  cache_dir: ".hf_cache"         # will be created; local-only
+  max_new_tokens: 96
+  temperature: 0.0
 
-# === Ingest ===
+virtual_tokens: 40
+epochs: 3
+batch_size: 8
+lr: 0.005
+max_seq_len: 512
+
 ingest:
   target_chunks: 120
   words_per_chunk: 120
   accept: [".docx", ".pdf", ".txt", ".md"]
+
+paths:
+  raw: "data/raw"                # supports per-style subfolders: data/raw/<style_id>/*
+  interim: "data/interim"
+  datasets: "data/datasets"      # will create per-style jsonl
+  softprompt: "artifacts/softprompt"
+  reports: "artifacts/reports"
+  runs: "artifacts/runs"
+  registry: "artifacts/registry" # styles.json
