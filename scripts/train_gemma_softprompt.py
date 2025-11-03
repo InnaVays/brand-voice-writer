@@ -1,10 +1,11 @@
-from scripts._bootstrap import add_repo_root
+from __future__ import annotations
+
+from _bootstrap import add_repo_root
 add_repo_root()
 
-from __future__ import annotations
 import argparse, os
-from core.softprompt.gemma_loader import load_gemma
-from core.softprompt.gemma_peft import SoftPromptTrainer, TrainConfig
+from core.softprompt.model_loader import load_model
+from core.softprompt.model_peft import SoftPromptTrainer, TrainConfig
 from core.eval.metrics import RunMetrics, save_run_json
 from core.models.registry import StyleRegistry
 import yaml
@@ -37,7 +38,7 @@ def main():
     device = args.device or cfg.get("device", "auto")
     model_id = cfg["model_id"]
 
-    tok, model, device = load_gemma(model_id, device=device)
+    tok, model, device = load_model(model_id, device=device)
     trainer = SoftPromptTrainer(
         model, tok,
         TrainConfig(virtual_tokens=vtok, lr=lr, epochs=epochs, batch_size=bsz, max_seq_len=msl, style_id=args.style),

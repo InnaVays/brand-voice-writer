@@ -1,15 +1,16 @@
-model_id: "google/gemma-2b-it"   # for soft-prompt training
+model_id: "Qwen/Qwen2.5-0.5B-Instruct"   # <— OPEN model for soft-prompt training
 device: "auto"
+batch_size: 2-4
 
 summarizer:
-  model_id: "Qwen/Qwen2.5-0.5B-Instruct"
+  model_id: "Qwen/Qwen2.5-0.5B-Instruct" # (или оставь, как уже настроено у тебя)
   cache_dir: ".hf_cache"
   max_new_tokens: 96
   temperature: 0.0
 
-virtual_tokens: 40
+virtual_tokens: 48          # 32–64 окей; 48 — хороший баланс
 epochs: 3
-batch_size: 8
+batch_size: 6               # уменьши, если мало памяти (2–4)
 lr: 0.005
 max_seq_len: 512
 
@@ -19,10 +20,10 @@ ingest:
   accept: [".docx", ".pdf", ".txt", ".md"]
 
 paths:
-  raw: "data/raw"                # supports per-style subfolders: data/raw/<style_id>/*
+  raw: "data/raw"
   interim: "data/interim"
-  datasets: "data/datasets"      # will create per-style jsonl
+  datasets: "data/datasets"
   softprompt: "artifacts/softprompt"
   reports: "artifacts/reports"
   runs: "artifacts/runs"
-  registry: "artifacts/registry" # styles.json
+  registry: "artifacts/registry"
