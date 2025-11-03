@@ -2,6 +2,15 @@
   "styles": {
     "fintech": {
       "dataset": "data/datasets/fintech.jsonl"
+    },
+    "ai_newsletter": {
+      "dataset": "data/datasets/ai_newsletter.jsonl"
+    },
+    "compliance": {
+      "dataset": "data/datasets/compliance.jsonl"
+    },
+    "motivation_guru": {
+      "dataset": "data/datasets/motivation_guru.jsonl"
     }
   }
 }
