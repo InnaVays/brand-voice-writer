@@ -1,18 +1,16 @@
-model_id: "Qwen/Qwen2.5-0.5B-Instruct"   # <— OPEN model for soft-prompt training
-device: "auto"
-batch_size: 2-4
+model_id: "google/flan-t5-small"   # Qwen/Qwen2.5-0.5B-Instruct
+virtual_tokens: 16                  
+epochs: 10
+batch_size: 1
+max_seq_len: 80
+lr: 0.005
+device: "cpu"
 
 summarizer:
-  model_id: "Qwen/Qwen2.5-0.5B-Instruct" # (или оставь, как уже настроено у тебя)
+  model_id: "Qwen/Qwen2.5-0.5B-Instruct" 
   cache_dir: ".hf_cache"
-  max_new_tokens: 96
+  max_new_tokens: 80
   temperature: 0.0
-
-virtual_tokens: 48          # 32–64 окей; 48 — хороший баланс
-epochs: 3
-batch_size: 6               # уменьши, если мало памяти (2–4)
-lr: 0.005
-max_seq_len: 512
 
 ingest:
   target_chunks: 120

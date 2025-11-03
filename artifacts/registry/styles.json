@@ -1,7 +1,8 @@
 {
   "styles": {
     "fintech": {
-      "dataset": "data/datasets/fintech.jsonl"
+      "dataset": "data/datasets/fintech.jsonl",
+      "adapter_dir": "artifacts/softprompt/fintech"
     },
     "ai_newsletter": {
       "dataset": "data/datasets/ai_newsletter.jsonl"

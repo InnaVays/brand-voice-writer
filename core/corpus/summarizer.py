@@ -15,7 +15,7 @@ class SmallSummarizer:
     1B Instruct model for neutral 1-2 sentence gists.
     Downloads on first use into summarizer.cache_dir. Reuses later.
     """
-    def __init__(self, model_id: str, cache_dir: str = ".hf_cache", device: str = "auto", max_new_tokens: int = 96, temperature: float = 0.0):
+    def __init__(self, model_id: str, cache_dir: str = ".hf_cache", device: str = "auto", max_new_tokens: int = 60, temperature: float = 0.0):
         self.model_id = model_id
         self.cache_dir = cache_dir
         os.makedirs(cache_dir, exist_ok=True)
@@ -51,7 +51,7 @@ class SmallSummarizer:
             self._model = AutoModelForCausalLM.from_pretrained(self.model_id, cache_dir=self.cache_dir).to(self.device)
             self._model.eval()
 
-    def summarize(self, chunk: str, max_sentences: int = 2) -> str:
+    def summarize(self, chunk: str) -> str:
         self._lazy_load()
         text = chunk.strip()[:]
 

@@ -61,7 +61,7 @@ def main():
         model_id=s_cfg["model_id"],
         cache_dir=s_cfg.get("cache_dir", ".hf_cache"),
         device=cfg.get("device", "auto"),
-        max_new_tokens=s_cfg.get("max_new_tokens", 96),
+        max_new_tokens=s_cfg.get("max_new_tokens", 80),
         temperature=s_cfg.get("temperature", 0.0),
     )
 

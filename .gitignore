@@ -12,4 +12,7 @@ reports/
 data/**
 !data/.gitkeep
 
+artifacts/**
+!artifacts/.gitkeep
+
 .hf_cache/
