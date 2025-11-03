@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# artifacts
+adapters/
+figures/
+reports/
+
+# data
+data/**
+!data/.gitkeep
+
+artifacts/**
+!artifacts/.gitkeep
+
+.hf_cache/

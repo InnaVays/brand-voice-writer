@@ -1,0 +1,27 @@
+model_id: "Qwen/Qwen2.5-1.5B-Instruct"   # Qwen/Qwen2.5-0.5B-Instruct
+virtual_tokens: 16                  
+epochs: 10
+batch_size: 1
+max_seq_len: 512
+lr: 0.005
+device: "cpu"
+
+summarizer:
+  model_id: "Qwen/Qwen2.5-0.5B-Instruct" 
+  cache_dir: ".hf_cache"
+  max_new_tokens: 80
+  temperature: 0.0
+
+ingest:
+  target_chunks: 120
+  words_per_chunk: 120
+  accept: [".docx", ".pdf", ".txt", ".md"]
+
+paths:
+  raw: "data/raw"
+  interim: "data/interim"
+  datasets: "data/datasets"
+  softprompt: "artifacts/softprompt"
+  reports: "artifacts/reports"
+  runs: "artifacts/runs"
+  registry: "artifacts/registry"
